@@ -1,0 +1,8 @@
+# CMake build folder
+build/**
+
+# DirectX Compiler
+external/dxc_2021_12_08/**
+
+# VSCode settings
+.vscode/**
