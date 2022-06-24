@@ -1,2 +1,2 @@
-MODEL cube.dae
+MODEL ../../common/cube.dae
 MATERIAL 1.0 1.0 1.0 20.0
