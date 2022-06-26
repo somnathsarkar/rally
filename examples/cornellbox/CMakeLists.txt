@@ -1,4 +1,4 @@
-add_executable(cornellbox main.cc)
+add_executable(cornellbox main.cc boxscript.cc)
 
 target_link_libraries(cornellbox PRIVATE rally)
 

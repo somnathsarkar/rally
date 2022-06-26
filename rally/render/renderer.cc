@@ -552,8 +552,10 @@ static bool CreateAccelerationStructures(RendererJobParams* job_params) {
 
   // Create Instance Upload Buffer
   for (u32 frame_i = 0; frame_i < renderer->frame_count; frame_i++) {
-    CreateUploadBuffer(renderer, sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
-                       &renderer->as_instance_buffer[frame_i]);
+    CreateUploadBuffer(
+        renderer,
+        app->scene->max_entities * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
+        &renderer->as_instance_buffer[frame_i]);
   }
 
   // BLAS description

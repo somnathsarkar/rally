@@ -1,3 +1,4 @@
+#include <examples/cornellbox/boxscript.h>
 #include <rally/application/application.h>
 #include <stdio.h>
 
@@ -8,7 +9,7 @@ int main() {
   WindowCreateInfo window_ci{L"Cornell Box", 640, 480};
   RendererCreateInfo renderer_ci{RenderMode::kRaytracing, 640, 480, 3, 2};
   SceneImportInfo scene_ii{true};
-  ScriptCreateInfo script_ci{0};
+  ScriptCreateInfo script_ci{CreateBoxScript, UpdateBoxScript};
   ApplicationCreateInfo app_ci{&thread_ci, &window_ci, &renderer_ci, &scene_ii,
                                &script_ci};
   constexpr s64 kAppMemorySize = Gigabytes(1);

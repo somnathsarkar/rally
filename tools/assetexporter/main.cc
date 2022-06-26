@@ -90,8 +90,9 @@ int main(int argc, char* argv[]) {
   Application* app = CreateApplication(&app_ci, app_mem, app_size);
 
   // Initialize preprocess resources
+  // TODO: Import these from assets.txt
   SceneCreateInfo scene_ci = {0};
-  scene_ci.max_entities = 1;
+  scene_ci.max_entities = 5;
   scene_ci.max_lights = 1;
 
   // Preprocess: Compute size of resources
