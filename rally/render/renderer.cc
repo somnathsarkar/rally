@@ -523,22 +523,7 @@ static bool CreateAccelerationStructures(RendererJobParams* job_params) {
   Renderer* renderer = job_params->app->renderer;
   ID3D12GraphicsCommandList6* cmd = renderer->command_lists[frame_i][thread_i];
 
-  D3D12_RAYTRACING_GEOMETRY_DESC geometry_desc{};
-  geometry_desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-  D3D12_RAYTRACING_GEOMETRY_TRIANGLES_DESC tri_desc{};
-  tri_desc.IndexBuffer = renderer->index_buffer->GetGPUVirtualAddress();
-  tri_desc.IndexCount = renderer->index_buffer->GetDesc().Width / sizeof(Index);
-  tri_desc.IndexFormat = renderer->format_library.index;
-  tri_desc.Transform3x4 = 0;
-  tri_desc.VertexBuffer.StartAddress =
-      renderer->vertex_buffer->GetGPUVirtualAddress();
-  tri_desc.VertexBuffer.StrideInBytes = sizeof(Vertex);
-  tri_desc.VertexCount =
-      renderer->vertex_buffer->GetDesc().Width / (sizeof(Vertex));
-  tri_desc.VertexFormat = renderer->format_library.vertex_position;
-  geometry_desc.Triangles = tri_desc;
-  geometry_desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
-
+  // Calculate size and scratch size requirements for maximum possible TLAS
   D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags =
       D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
   D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS top_level_inputs{};
@@ -547,53 +532,81 @@ static bool CreateAccelerationStructures(RendererJobParams* job_params) {
   top_level_inputs.NumDescs = app->scene->max_entities;
   top_level_inputs.Type =
       D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-
   D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO
   top_level_prebuild_info{};
   renderer->device->GetRaytracingAccelerationStructurePrebuildInfo(
       &top_level_inputs, &top_level_prebuild_info);
   ASSERT(top_level_prebuild_info.ResultDataMaxSizeInBytes > 0,
          "Failed to get TLAS prebuild info!");
+  s64 scratch_size = top_level_prebuild_info.ScratchDataSizeInBytes;
 
-  D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO
-  bottom_level_prebuild_info{};
-  D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS bottom_level_inputs{};
-  bottom_level_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-  bottom_level_inputs.Flags = build_flags;
-  bottom_level_inputs.NumDescs = app->scene->resources->mesh_count;
-  bottom_level_inputs.Type =
-      D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-  bottom_level_inputs.pGeometryDescs = &geometry_desc;
-  renderer->device->GetRaytracingAccelerationStructurePrebuildInfo(
-      &bottom_level_inputs, &bottom_level_prebuild_info);
-  ASSERT(bottom_level_prebuild_info.ResultDataMaxSizeInBytes > 0,
-         "Failed to get BLAS prebuild info!");
+  // Populate BLAS creation structs for each mesh
+  // This is a geometry description + BLAS input
+  for (u32 mesh_i = 0; mesh_i < app->scene->resources->mesh_count; mesh_i++) {
+    Mesh mesh = app->scene->resources->meshes[mesh_i];
 
+    D3D12_RAYTRACING_GEOMETRY_DESC& geometry_desc =
+        renderer->rt_geometries[mesh_i];
+    geometry_desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+    D3D12_RAYTRACING_GEOMETRY_TRIANGLES_DESC tri_desc{};
+    tri_desc.IndexBuffer = renderer->index_buffer->GetGPUVirtualAddress() +
+                           mesh.index_offset * sizeof(Index);
+    tri_desc.IndexCount = mesh.index_count;
+    tri_desc.IndexFormat = renderer->format_library.index;
+    tri_desc.Transform3x4 = 0;
+    tri_desc.VertexBuffer.StartAddress =
+        renderer->vertex_buffer->GetGPUVirtualAddress() +
+        mesh.vertex_offset * sizeof(Vertex);
+    tri_desc.VertexBuffer.StrideInBytes = sizeof(Vertex);
+    tri_desc.VertexCount = mesh.vertex_count;
+    tri_desc.VertexFormat = renderer->format_library.vertex_position;
+    geometry_desc.Triangles = tri_desc;
+    geometry_desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS& bottom_level_inputs =
+        renderer->rt_blas_inputs[mesh_i];
+    bottom_level_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    bottom_level_inputs.Flags = build_flags;
+    bottom_level_inputs.NumDescs = 1;
+    bottom_level_inputs.Type =
+        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+    bottom_level_inputs.pGeometryDescs = &renderer->rt_geometries[mesh_i];
+  }
   // Acceleration Structure Creation Involves 3 GPU resources
   // 1. Scratch Space - UAV Buffer used only to create AS, can be freed after
   // 2. AS Buffer - UAV Buffer used to store the AS, must be preserved
-  // 3. Instance Buffer - Regular Buffer used to build TLAS, can be freed after
-  // Create Scratch UAV Buffer
-  s64 scratch_size = top_level_prebuild_info.ScratchDataSizeInBytes >
-                             bottom_level_prebuild_info.ScratchDataSizeInBytes
-                         ? top_level_prebuild_info.ScratchDataSizeInBytes
-                         : bottom_level_prebuild_info.ScratchDataSizeInBytes;
-  // Create AS UAV Buffers
+  // 3. Instance Buffer - Regular Buffer used to build TLAS
   bool failed = false;
+
+  // Create BLAS UAVs - one per mesh
+  // Also calculate maximum scratch space needed
+  for (u32 mesh_i = 0; mesh_i < app->scene->resources->mesh_count; mesh_i++) {
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO
+    bottom_level_prebuild_info{};
+    renderer->device->GetRaytracingAccelerationStructurePrebuildInfo(
+        &renderer->rt_blas_inputs[mesh_i], &bottom_level_prebuild_info);
+    ASSERT(bottom_level_prebuild_info.ResultDataMaxSizeInBytes > 0,
+           "Failed to get BLAS prebuild info!");
+    // Get max scratch size
+    s64 blas_scratch_size = bottom_level_prebuild_info.ScratchDataSizeInBytes;
+    scratch_size = max(scratch_size, blas_scratch_size);
+    // Create BLAS UAV
+    failed |= CreateUavBuffer(
+        renderer, bottom_level_prebuild_info.ResultDataMaxSizeInBytes,
+        D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+        &renderer->rt_blas[mesh_i]);
+  }
   for (u32 frame_i = 0; frame_i < renderer->frame_count; frame_i++) {
+    // Create scratch UAV
     failed = CreateUavBuffer(renderer, scratch_size,
                              D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                              &renderer->as_scratch_buffer[frame_i]);
+    // Create TLAS UAV
     failed |= CreateUavBuffer(
         renderer, top_level_prebuild_info.ResultDataMaxSizeInBytes,
         D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
         &renderer->rt_tlas[frame_i]);
   }
-  failed |= CreateUavBuffer(
-      renderer, bottom_level_prebuild_info.ResultDataMaxSizeInBytes,
-      D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-      &renderer->rt_blas);
-
   // Create Instance Upload Buffer
   for (u32 frame_i = 0; frame_i < renderer->frame_count; frame_i++) {
     CreateUploadBuffer(
@@ -602,18 +615,22 @@ static bool CreateAccelerationStructures(RendererJobParams* job_params) {
         &renderer->as_instance_buffer[frame_i]);
   }
 
-  // BLAS description
-  D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottom_level_desc{};
-  bottom_level_desc.DestAccelerationStructureData =
-      renderer->rt_blas->GetGPUVirtualAddress();
-  bottom_level_desc.Inputs = bottom_level_inputs;
-  bottom_level_desc.ScratchAccelerationStructureData =
-      renderer->as_scratch_buffer[0]->GetGPUVirtualAddress();
+  // Create BLAS - one per mesh
+  for (u32 mesh_i = 0; mesh_i < app->scene->resources->mesh_count; mesh_i++) {
+    // BLAS description
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottom_level_desc{};
+    bottom_level_desc.DestAccelerationStructureData =
+        renderer->rt_blas[mesh_i]->GetGPUVirtualAddress();
+    bottom_level_desc.Inputs = renderer->rt_blas_inputs[mesh_i];
+    bottom_level_desc.ScratchAccelerationStructureData =
+        renderer->as_scratch_buffer[0]->GetGPUVirtualAddress();
 
-  // Actually create the AS
-  cmd->BuildRaytracingAccelerationStructure(&bottom_level_desc, 0, nullptr);
-  auto blas_barrier = CD3DX12_RESOURCE_BARRIER::UAV(renderer->rt_blas);
-  cmd->ResourceBarrier(1, &blas_barrier);
+    // Actually create the AS
+    cmd->BuildRaytracingAccelerationStructure(&bottom_level_desc, 0, nullptr);
+    auto blas_barrier =
+        CD3DX12_RESOURCE_BARRIER::UAV(renderer->rt_blas[mesh_i]);
+    cmd->ResourceBarrier(1, &blas_barrier);
+  }
 
   return false;
 }
@@ -752,6 +769,12 @@ bool CreateRenderer(RendererCreateInfo* renderer_ci, Application* app) {
   // TODO: Move this to its own function?
   app->renderer =
       (Renderer*)StackAllocate(app->alloc, sizeof(Renderer), alignof(Renderer));
+  u32 mesh_count = app->scene->resources->mesh_count;
+  app->renderer->rt_blas = SALLOC(app->alloc, ID3D12Resource*, mesh_count);
+  app->renderer->rt_geometries =
+      SALLOC(app->alloc, D3D12_RAYTRACING_GEOMETRY_DESC, mesh_count);
+  app->renderer->rt_blas_inputs = SALLOC(
+      app->alloc, D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS, 1);
   for (u32 frame_i = 0; frame_i < renderer_ci->frame_count; frame_i++) {
     app->renderer->rt_instances[frame_i] = SALLOC(
         app->alloc, D3D12_RAYTRACING_INSTANCE_DESC, (app->scene->max_entities));
@@ -861,8 +884,11 @@ bool BuildTlas(RendererJobParams* job_params) {
 
   // Traverse scene hierarchy
   for (u32 entity_i = 0; entity_i < app->scene->entity_count; entity_i++) {
+    u32 mesh_i = app->scene->entities[entity_i];
+    Mesh mesh = app->scene->resources->meshes[mesh_i];
+
     renderer->rt_instances[frame_i][entity_i].AccelerationStructure =
-        renderer->rt_blas->GetGPUVirtualAddress();
+        renderer->rt_blas[mesh_i]->GetGPUVirtualAddress();
     renderer->rt_instances[frame_i][entity_i]
         .InstanceContributionToHitGroupIndex = 0;
     renderer->rt_instances[frame_i][entity_i].InstanceID = entity_i;
@@ -878,7 +904,8 @@ bool BuildTlas(RendererJobParams* job_params) {
         }
       }
     }
-    Mesh mesh = app->scene->resources->meshes[app->scene->entities[entity_i]];
+
+    // Fill instance buffer
     renderer->instances[frame_i][entity_i] = {
         (i32)mesh.vertex_offset, (i32)mesh.index_offset,
         (i32)app->scene->material_ids[entity_i]};
@@ -950,7 +977,8 @@ void UpdateRenderer(Application* app) {
   void* instance_data = nullptr;
   renderer->instance_buffer[frame_i]->Map(0, nullptr, &instance_data);
   i32 num_instances = app->scene->entity_count;
-  memcpy(instance_data, renderer->instances[frame_i], sizeof(Instance) * num_instances);
+  memcpy(instance_data, renderer->instances[frame_i],
+         sizeof(Instance) * num_instances);
   renderer->instance_buffer[frame_i]->Unmap(0, nullptr);
 
   // Setup Raytracing
@@ -1028,7 +1056,9 @@ void UpdateRenderer(Application* app) {
   EndFrame(renderer, frame_i, true);
 }
 
-void DestroyRenderer(Renderer* renderer) {
+void DestroyRenderer(Application* app) {
+  Renderer* renderer = app->renderer;
+
   if (renderer == nullptr) return;
   for (u32 frame_i = 0; frame_i < renderer->frame_count; frame_i++) {
     WaitForFences(renderer, frame_i);
@@ -1047,7 +1077,6 @@ void DestroyRenderer(Renderer* renderer) {
   DXRELEASE(renderer->material_buffer);
 
   DXRELEASE(renderer->rt_pipeline);
-  DXRELEASE(renderer->rt_blas);
   DXRELEASE(renderer->rt_miss_shader_table);
   for (u32 frame_i = 0; frame_i < renderer->frame_count; frame_i++) {
     // Temporary, TODO: remove these parameters later
@@ -1059,6 +1088,10 @@ void DestroyRenderer(Renderer* renderer) {
     DXRELEASE(renderer->rt_hitgroup_shader_table[frame_i]);
     DXRELEASE(renderer->rt_hitgroup_constant_buffer[frame_i]);
     DXRELEASE(renderer->instance_buffer[frame_i]);
+  }
+
+  for (u32 mesh_i = 0; mesh_i < app->scene->resources->mesh_count; mesh_i++) {
+    DXRELEASE(renderer->rt_blas[mesh_i]);
   }
 
   DXRELEASE(renderer->command_queue);
