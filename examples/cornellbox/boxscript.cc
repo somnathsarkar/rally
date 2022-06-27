@@ -1,4 +1,5 @@
 #include <examples/cornellbox/boxscript.h>
+#include <math.h>
 
 enum class BoxMaterials : rally::u32 {
   kWhite = 0,
@@ -51,7 +52,7 @@ bool CreateBoxScript(rally::Application* app) {
   scene->transforms[4] = rally::MTranslation(1.0f, 0.0f, -1.0f);
 
   // Point light
-  scene->lights[0] = {{0.0f, 0.0f, -1.25f}, 1.0f, 1.0f, 1.0f, 0.5f};
+  scene->lights[0] = {{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f, 1.0f, 0.5f};
   scene->light_count = 1;
 
   // Sphere
@@ -62,4 +63,20 @@ bool CreateBoxScript(rally::Application* app) {
       rally::MMul(rally::MTranslation(0, 0, -1.0f), rally::MScale(0.1f));
   return false;
 }
-bool UpdateBoxScript(rally::Application* app) { return false; }
+bool UpdateBoxScript(rally::Application* app) {
+  // TODO: Rework this with QPC time system
+  static float current_time = 0.0f;
+  // Update Light
+  constexpr float light_speed = 0.05f;
+  constexpr float light_radius = 0.33f;
+  rally::Vec4 light_pos = {
+      light_radius * sinf(current_time * light_speed), 0.0f,
+      light_radius * cosf(current_time * light_speed), 1.0f};
+  light_pos = rally::VMul(rally::MRotation(0.0f, 0.0f, rally::Radians(30.0f)),
+                          light_pos);
+  light_pos = rally::VMul(rally::MTranslation(0.0f, 0.0f, -1.0f), light_pos);
+  (app->scene->lights[0]).position = light_pos;
+  // Update time
+  current_time += 1.0f;
+  return false;
+}
