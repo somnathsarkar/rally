@@ -22,7 +22,8 @@ struct RaygenConstant {
 };
 struct HitGroupConstant {
   PointLight point_lights[kMaxPointLights];
-  int point_light_count;
+  i32 point_light_count;
+  i32 _pad[47];
 };
 struct FormatLibrary {
   DXGI_FORMAT swapchain;
@@ -72,11 +73,13 @@ struct Renderer {
 
   // Scene instance data
   D3D12_RAYTRACING_INSTANCE_DESC* rt_instances[kMaxFrameCount];
+  Instance* instances[kMaxFrameCount];
 
   // Scene Data
   ID3D12Resource* vertex_buffer;
   ID3D12Resource* index_buffer;
   ID3D12Resource* material_buffer;
+  ID3D12Resource* instance_buffer[kMaxFrameCount];
 
   // Temporary Intermediate Buffers
   // TODO: Merge into singular buffer

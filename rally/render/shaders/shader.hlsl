@@ -52,11 +52,19 @@ struct PointLight
 
 struct PointLightSettings{
     int count;
+    int _pad[47];
 };
 
 struct HitGroupConstantBuffer{
     PointLight point_lights[MAX_POINT_LIGHTS];
     PointLightSettings point_light_settings;
+};
+
+struct InstanceBuffer{
+    int vertex_offset;
+    int index_offset;
+    int material_id;
+    int _pad;
 };
 
 // Global DXR descriptors
@@ -72,7 +80,8 @@ ByteAddressBuffer index_buffer : register(t2, space0);
 StructuredBuffer<Material> material_buffer : register(t3, space0);
 
 // Local Hit Group Descriptor Table
-ConstantBuffer<HitGroupConstantBuffer> hitgroup_cb : register(b2);
+ConstantBuffer<HitGroupConstantBuffer> hitgroup_cb : register(b1);
+StructuredBuffer<InstanceBuffer> instance_buffer : register(t4, space0);
 
 typedef BuiltInTriangleIntersectionAttributes MyAttributes;
 struct RayPayload
@@ -125,9 +134,14 @@ float3 GetWorldPos(){
 [shader("closesthit")]
 void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
+    uint instance_id = InstanceID();
+    int vertex_offset = instance_buffer[instance_id].vertex_offset;
+    int index_offset = instance_buffer[instance_id].index_offset;
+
     float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
     uint pidx = PrimitiveIndex();
-    uint3 idx = index_buffer.Load3(pidx*3*4);
+    uint3 idx = index_buffer.Load3((pidx*3+index_offset)*4);
+    idx += vertex_offset;
     
     // Get normal
     float3 n0 = vertex_buffer[idx.x].normal;
@@ -139,7 +153,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     // Get world pos
     float3 world_pos = GetWorldPos();
     
-    uint mat_id = InstanceID();
+    int mat_id = instance_buffer[instance_id].material_id;
     float3 world_camera_pos = WorldRayOrigin();
     float3 albedo_color = material_buffer[mat_id].albedo;
     float k_a = 0.1f;

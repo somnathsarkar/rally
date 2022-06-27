@@ -226,8 +226,13 @@ static bool CreateRootSignatures(Renderer* renderer) {
 
   // Local Root Signature for Hitgroup Shader
   {
+    CD3DX12_DESCRIPTOR_RANGE desc_range[2];
+    desc_range[0] =
+        CD3DX12_DESCRIPTOR_RANGE(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
+    desc_range[1] =
+        CD3DX12_DESCRIPTOR_RANGE(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4);
     CD3DX12_ROOT_PARAMETER root_params[1];
-    root_params[0].InitAsConstantBufferView(2);
+    root_params[0].InitAsDescriptorTable(2, desc_range);
     CD3DX12_ROOT_SIGNATURE_DESC root_desc(1, root_params);
     root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
     SerializeAndCreateRootSignature(renderer, root_desc,
@@ -238,12 +243,13 @@ static bool CreateRootSignatures(Renderer* renderer) {
 
 // Create descriptor heap. Modify this when you need more resources
 // [0,Frame_Count) = Raytracing output UAVs
-// [Frame_Count,Frame_Count+2] = Geometry SRVs (Vertex,Index,Material)
+// [Frame_Count,Frame_Count+3) = Geometry SRVs (Vertex,Index,Material)
+// [Frame_Count+3,Frame_Count*3+3) = Hitgroup DT (CBV, Instance SRV)
 static bool CreateDescriptorHeaps(Renderer* renderer) {
   // Create descriptor heap for CBV, SRV, UAV types
   D3D12_DESCRIPTOR_HEAP_DESC heap_desc{};
   heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  heap_desc.NumDescriptors = renderer->frame_count + 3;
+  heap_desc.NumDescriptors = renderer->frame_count * 3 + 3;
   heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
   heap_desc.NodeMask = 0;
   HRESULT hr = renderer->device->CreateDescriptorHeap(
@@ -466,6 +472,44 @@ static bool CreateGeometry(Application* app) {
   return failed;
 }
 
+static bool CreateHitgroupResources(Application* app) {
+  bool failed = false;
+  Renderer* renderer = app->renderer;
+  UINT desc_size = renderer->device->GetDescriptorHandleIncrementSize(
+      D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+  CD3DX12_CPU_DESCRIPTOR_HANDLE cpu_handle(
+      renderer->descriptor_heap->GetCPUDescriptorHandleForHeapStart(),
+      renderer->frame_count + 3, desc_size);
+  for (u32 frame_i = 0; frame_i < renderer->frame_count; frame_i++) {
+    failed |=
+        CreateUploadBuffer(renderer, sizeof(HitGroupConstant),
+                           &renderer->rt_hitgroup_constant_buffer[frame_i]);
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc{};
+    cbv_desc.BufferLocation =
+        renderer->rt_hitgroup_constant_buffer[frame_i]->GetGPUVirtualAddress();
+    cbv_desc.SizeInBytes = sizeof(HitGroupConstant);
+    renderer->device->CreateConstantBufferView(&cbv_desc, cpu_handle);
+    cpu_handle.Offset(1, desc_size);
+
+    failed |= CreateUploadBuffer(renderer,
+                                 sizeof(Instance) * (app->scene->max_entities),
+                                 &renderer->instance_buffer[frame_i]);
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
+    srv_desc.Buffer.FirstElement = 0;
+    srv_desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+    srv_desc.Buffer.NumElements = app->scene->max_entities;
+    srv_desc.Buffer.StructureByteStride = sizeof(Instance);
+    srv_desc.Format = DXGI_FORMAT_UNKNOWN;
+    srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srv_desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+    renderer->device->CreateShaderResourceView(
+        renderer->instance_buffer[frame_i], &srv_desc, cpu_handle);
+    cpu_handle.Offset(1, desc_size);
+  }
+
+  return failed;
+}
+
 struct RendererJobParams {
   Application* app;
   u32 frame_i;
@@ -679,14 +723,12 @@ static bool CreateShaderTableResources(RendererJobParams* job_params) {
   // Hit group shader table - one for each frame
   {
     for (u32 frame_i = 0; frame_i < renderer->frame_count; frame_i++) {
-      failed |=
-          CreateUploadBuffer(renderer, sizeof(HitGroupConstant),
-                             &renderer->rt_hitgroup_constant_buffer[frame_i]);
-      D3D12_GPU_VIRTUAL_ADDRESS hitgroup_cb_address =
-          renderer->rt_hitgroup_constant_buffer[frame_i]
-              ->GetGPUVirtualAddress();
-      UINT shader_record_size =
-          shader_id_size + sizeof(D3D12_GPU_VIRTUAL_ADDRESS);
+      auto hitgroup_dt_handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(
+          renderer->descriptor_heap->GetGPUDescriptorHandleForHeapStart(),
+          renderer->frame_count + 3 + frame_i * 2,
+          renderer->device->GetDescriptorHandleIncrementSize(
+              D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+      UINT shader_record_size = shader_id_size + sizeof(hitgroup_dt_handle);
       // Hitgroup shader records must have stride multiple of 32
       // Hitgroup shader records must have size multiple of stride (32)
       shader_record_size = 32 * ((shader_record_size + 31) / 32);
@@ -697,8 +739,8 @@ static bool CreateShaderTableResources(RendererJobParams* job_params) {
       renderer->rt_hitgroup_shader_table[frame_i]->Map(0, nullptr,
                                                        &shader_table_data);
       memcpy(shader_table_data, hitgroup_shader_id, shader_id_size);
-      memcpy((char*)shader_table_data + shader_id_size, &hitgroup_cb_address,
-             sizeof(D3D12_GPU_VIRTUAL_ADDRESS));
+      memcpy((char*)shader_table_data + shader_id_size, &hitgroup_dt_handle,
+             sizeof(hitgroup_dt_handle));
       renderer->rt_hitgroup_shader_table[frame_i]->Unmap(0, nullptr);
     }
   }
@@ -713,6 +755,8 @@ bool CreateRenderer(RendererCreateInfo* renderer_ci, Application* app) {
   for (u32 frame_i = 0; frame_i < renderer_ci->frame_count; frame_i++) {
     app->renderer->rt_instances[frame_i] = SALLOC(
         app->alloc, D3D12_RAYTRACING_INSTANCE_DESC, (app->scene->max_entities));
+    app->renderer->instances[frame_i] =
+        SALLOC(app->alloc, Instance, (app->scene->max_entities));
   }
 
   Renderer* renderer = app->renderer;
@@ -767,8 +811,13 @@ bool CreateRenderer(RendererCreateInfo* renderer_ci, Application* app) {
   jobs[1] = {(job_func)CreateCommandLists, renderer};
   jobs[2] = {(job_func)CreateRaytracingOutputBuffers, renderer};
   jobs[3] = {(job_func)CreateRaytracingPipeline, renderer};
-  jobs[4] = {(job_func)CreateGeometry, app};
-  PushJobs(queue, jobs, 5);
+  PushJobs(queue, jobs, 4);
+  WaitThreadQueue(queue);
+  jobs[0] = {(job_func)CreateGeometry, app};
+  PushJobs(queue, jobs, 1);
+  WaitThreadQueue(queue);
+  jobs[0] = {(job_func)CreateHitgroupResources, app};
+  PushJobs(queue, jobs, 1);
   WaitThreadQueue(queue);
 
   // Begin a non-present frame for this
@@ -816,8 +865,7 @@ bool BuildTlas(RendererJobParams* job_params) {
         renderer->rt_blas->GetGPUVirtualAddress();
     renderer->rt_instances[frame_i][entity_i]
         .InstanceContributionToHitGroupIndex = 0;
-    renderer->rt_instances[frame_i][entity_i].InstanceID =
-        app->scene->material_ids[entity_i];
+    renderer->rt_instances[frame_i][entity_i].InstanceID = entity_i;
     renderer->rt_instances[frame_i][entity_i].InstanceMask = 1;
     {
       // Store matrix transpose in row-major order
@@ -830,6 +878,10 @@ bool BuildTlas(RendererJobParams* job_params) {
         }
       }
     }
+    Mesh mesh = app->scene->resources->meshes[app->scene->entities[entity_i]];
+    renderer->instances[frame_i][entity_i] = {
+        (i32)mesh.vertex_offset, (i32)mesh.index_offset,
+        (i32)app->scene->material_ids[entity_i]};
   }
 
   // Write to resource
@@ -893,6 +945,13 @@ void UpdateRenderer(Application* app) {
   // Build TLAS from scene data
   RendererJobParams job_params = {app, frame_i, 0};
   BuildTlas(&job_params);
+
+  // Copy instance buffer
+  void* instance_data = nullptr;
+  renderer->instance_buffer[frame_i]->Map(0, nullptr, &instance_data);
+  i32 num_instances = app->scene->entity_count;
+  memcpy(instance_data, renderer->instances[frame_i], sizeof(Instance) * num_instances);
+  renderer->instance_buffer[frame_i]->Unmap(0, nullptr);
 
   // Setup Raytracing
   cmd->SetComputeRootSignature(renderer->global_signature);
@@ -999,6 +1058,7 @@ void DestroyRenderer(Renderer* renderer) {
     DXRELEASE(renderer->rt_raygen_constant_buffer[frame_i]);
     DXRELEASE(renderer->rt_hitgroup_shader_table[frame_i]);
     DXRELEASE(renderer->rt_hitgroup_constant_buffer[frame_i]);
+    DXRELEASE(renderer->instance_buffer[frame_i]);
   }
 
   DXRELEASE(renderer->command_queue);

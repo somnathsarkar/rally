@@ -23,4 +23,10 @@ struct Material {
   r32 albedo_r, albedo_g, albedo_b;
   r32 shininess;
 };
+struct Instance{
+  i32 vertex_offset;
+  i32 index_offset;
+  i32 material_id;
+  i32 _pad;
+};
 }  // namespace rally
