@@ -4,6 +4,7 @@ enum class BoxMaterials : rally::u32 {
   kWhite = 0,
   kRed = 1,
   kGreen = 2,
+  kBlue = 3,
 };
 
 bool CreateBoxScript(rally::Application* app) {
@@ -50,8 +51,15 @@ bool CreateBoxScript(rally::Application* app) {
   scene->transforms[4] = rally::MTranslation(1.0f, 0.0f, -1.0f);
 
   // Point light
-  scene->lights[0] = {{0.0f, 0.0f, -1.0f}, 1.0f, 1.0f, 1.0f, 0.5f};
+  scene->lights[0] = {{0.0f, 0.0f, -1.25f}, 1.0f, 1.0f, 1.0f, 0.5f};
   scene->light_count = 1;
+
+  // Sphere
+  scene->entities[5] = 1;
+  scene->material_ids[5] = (rally::u32)BoxMaterials::kBlue;
+  scene->entity_count = 6;
+  scene->transforms[5] =
+      rally::MMul(rally::MTranslation(0, 0, -1.0f), rally::MScale(0.1f));
   return false;
 }
 bool UpdateBoxScript(rally::Application* app) { return false; }
