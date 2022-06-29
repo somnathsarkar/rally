@@ -22,7 +22,8 @@ struct RaygenConstant {
 };
 struct HitGroupConstant {
   PointLight point_lights[kMaxPointLights];
-  int point_light_count;
+  i32 point_light_count;
+  i32 _pad[47];
 };
 struct FormatLibrary {
   DXGI_FORMAT swapchain;
@@ -60,7 +61,7 @@ struct Renderer {
   ID3D12Resource* rt_output_buffers[kMaxFrameCount];
   ID3D12StateObject* rt_pipeline;
   ID3D12Resource* rt_tlas[kMaxFrameCount];
-  ID3D12Resource* rt_blas;
+  ID3D12Resource** rt_blas;
   ID3D12Resource* rt_raygen_shader_table[kMaxFrameCount];
   ID3D12Resource* rt_miss_shader_table;
   ID3D12Resource* rt_hitgroup_shader_table[kMaxFrameCount];
@@ -72,11 +73,17 @@ struct Renderer {
 
   // Scene instance data
   D3D12_RAYTRACING_INSTANCE_DESC* rt_instances[kMaxFrameCount];
+  Instance* instances[kMaxFrameCount];
+
+  // BLAS creation temporaries
+  D3D12_RAYTRACING_GEOMETRY_DESC* rt_geometries;
+  D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS* rt_blas_inputs;
 
   // Scene Data
   ID3D12Resource* vertex_buffer;
   ID3D12Resource* index_buffer;
   ID3D12Resource* material_buffer;
+  ID3D12Resource* instance_buffer[kMaxFrameCount];
 
   // Temporary Intermediate Buffers
   // TODO: Merge into singular buffer
@@ -96,5 +103,5 @@ struct RendererCreateInfo {
 };
 bool CreateRenderer(RendererCreateInfo* renderer_ci, Application* app);
 void UpdateRenderer(Application* renderer);
-void DestroyRenderer(Renderer* renderer);
+void DestroyRenderer(Application* app);
 }  // namespace rally

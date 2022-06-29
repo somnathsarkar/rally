@@ -44,7 +44,7 @@ bool UpdateApplication(Application* app) {
 bool IsApplicationActive(Application* app) { return app->window->active; }
 void DestroyApplication(Application* app) {
   DestroyThreadPool(app->threadpool);
-  DestroyRenderer(app->renderer);
+  DestroyRenderer(app);
   DestroyWin32Window(app->window);
 }
 }  // namespace rally

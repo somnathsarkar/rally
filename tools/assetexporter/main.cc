@@ -44,6 +44,7 @@ void ProcessModel(const char* read_buffer, Scene* scene) {
                                    aiProcess_CalcTangentSpace);
   const aiScene* ai_scene = importer->GetScene();
   u32 num_meshes = ai_scene->mNumMeshes;
+  u32 mesh_offset = scene->resources->mesh_count;
   for (u32 mesh_i = 0; mesh_i < num_meshes; mesh_i++) {
     const aiMesh* mesh = ai_scene->mMeshes[mesh_i];
     u32 vert_count = mesh->mNumVertices;
@@ -63,6 +64,11 @@ void ProcessModel(const char* read_buffer, Scene* scene) {
       scene->resources->vertices[vert_i + vert_offset] = vert;
       scene->resources->indices[vert_i + index_offset] = vert_i;
     }
+    scene->resources->meshes[mesh_i + mesh_offset].vertex_offset = vert_offset;
+    scene->resources->meshes[mesh_i + mesh_offset].index_offset = index_offset;
+    scene->resources->meshes[mesh_i + mesh_offset].vertex_count = vert_count;
+    scene->resources->meshes[mesh_i + mesh_offset].index_count = vert_count;
+
     scene->resources->vertex_count += vert_count;
     scene->resources->index_count += vert_count;
     scene->resources->mesh_count++;
@@ -90,8 +96,9 @@ int main(int argc, char* argv[]) {
   Application* app = CreateApplication(&app_ci, app_mem, app_size);
 
   // Initialize preprocess resources
+  // TODO: Import these from assets.txt
   SceneCreateInfo scene_ci = {0};
-  scene_ci.max_entities = 1;
+  scene_ci.max_entities = 6;
   scene_ci.max_lights = 1;
 
   // Preprocess: Compute size of resources
