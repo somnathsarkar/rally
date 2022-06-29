@@ -52,7 +52,7 @@ bool CreateBoxScript(rally::Application* app) {
   scene->transforms[4] = rally::MTranslation(1.0f, 0.0f, -1.0f);
 
   // Point light
-  scene->lights[0] = {{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f, 1.0f, 0.5f};
+  scene->lights[0] = {{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f, 1.0f, 1.0f};
   scene->light_count = 1;
 
   // Sphere
@@ -68,7 +68,7 @@ bool UpdateBoxScript(rally::Application* app) {
   static float current_time = 0.0f;
   // Update Light
   constexpr float light_speed = 0.05f;
-  constexpr float light_radius = 0.33f;
+  constexpr float light_radius = 0.4f;
   rally::Vec4 light_pos = {
       light_radius * sinf(current_time * light_speed), 0.0f,
       light_radius * cosf(current_time * light_speed), 1.0f};

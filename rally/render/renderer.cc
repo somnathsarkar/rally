@@ -301,10 +301,13 @@ static bool CreateRaytracingPipeline(Renderer* renderer) {
     lib->DefineExport(L"CameraRaygenShader");
     lib->DefineExport(L"CameraClosestHitShader");
     lib->DefineExport(L"CameraMissShader");
+    lib->DefineExport(L"ShadowMissShader");
   }
 
   // Hit group: collection of shaders describing types of hits
   // Types include closest hit, any hit, intersection shaders
+
+  // Camera hit group
   {
     CD3DX12_HIT_GROUP_SUBOBJECT* hit_group =
         pipeline_desc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
@@ -358,7 +361,7 @@ static bool CreateRaytracingPipeline(Renderer* renderer) {
     auto pipeline_config =
         pipeline_desc
             .CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-    pipeline_config->Config(1);
+    pipeline_config->Config(2);
   }
 
   HRESULT hr = renderer->device->CreateStateObject(
@@ -707,6 +710,8 @@ static bool CreateShaderTableResources(RendererJobParams* job_params) {
       pipeline_props->GetShaderIdentifier(L"CameraMissShader");
   void* camera_hitgroup_shader_id =
       pipeline_props->GetShaderIdentifier(L"CameraHitGroup");
+  void* shadow_miss_shader_id =
+      pipeline_props->GetShaderIdentifier(L"ShadowMissShader");
   UINT shader_id_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
   pipeline_props->Release();
 
@@ -734,10 +739,15 @@ static bool CreateShaderTableResources(RendererJobParams* job_params) {
 
   // Miss shader table - single miss shader for all frames
   {
-    UINT shader_record_size = shader_id_size;
-    failed |=
-        CreateUploadBuffer(renderer, camera_miss_shader_id, shader_id_size,
-                           &renderer->rt_miss_shader_table);
+    UINT shader_record_size = shader_id_size * 2;
+    failed |= CreateUploadBuffer(renderer, shader_record_size,
+                                 &renderer->rt_miss_shader_table);
+    void* shader_table_data = nullptr;
+    renderer->rt_miss_shader_table->Map(0, nullptr, &shader_table_data);
+    memcpy(shader_table_data, camera_miss_shader_id, shader_id_size);
+    memcpy((char*)shader_table_data + shader_id_size, shadow_miss_shader_id,
+           shader_id_size);
+    renderer->rt_miss_shader_table->Unmap(0, nullptr);
   }
 
   // Hit group shader table - one for each frame
@@ -748,10 +758,11 @@ static bool CreateShaderTableResources(RendererJobParams* job_params) {
           renderer->frame_count + 3 + frame_i * 2,
           renderer->device->GetDescriptorHandleIncrementSize(
               D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
-      UINT shader_record_size = shader_id_size + sizeof(hitgroup_dt_handle);
+      UINT shader_record_stride = shader_id_size + sizeof(hitgroup_dt_handle);
       // Hitgroup shader records must have stride multiple of 32
       // Hitgroup shader records must have size multiple of stride (32)
-      shader_record_size = 32 * ((shader_record_size + 31) / 32);
+      shader_record_stride = 32 * ((shader_record_stride + 31) / 32);
+      UINT shader_record_size = shader_record_stride;
       failed |=
           CreateUploadBuffer(renderer, shader_record_size,
                              &renderer->rt_hitgroup_shader_table[frame_i]);
@@ -764,6 +775,7 @@ static bool CreateShaderTableResources(RendererJobParams* job_params) {
       renderer->rt_hitgroup_shader_table[frame_i]->Unmap(0, nullptr);
     }
   }
+
   return false;
 }
 
@@ -1015,7 +1027,7 @@ void UpdateRenderer(Application* app) {
   dispatch_desc.MissShaderTable.SizeInBytes =
       renderer->rt_miss_shader_table->GetDesc().Width;
   dispatch_desc.MissShaderTable.StrideInBytes =
-      dispatch_desc.MissShaderTable.SizeInBytes;
+      dispatch_desc.MissShaderTable.SizeInBytes / 2;
   dispatch_desc.RayGenerationShaderRecord.StartAddress =
       renderer->rt_raygen_shader_table[frame_i]->GetGPUVirtualAddress();
   dispatch_desc.RayGenerationShaderRecord.SizeInBytes =

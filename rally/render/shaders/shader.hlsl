@@ -88,6 +88,10 @@ struct CameraRayPayload
 {
     float4 color;
 };
+struct ShadowRayPayload
+{
+    bool hit;
+};
 
 [shader("raygeneration")]
 void CameraRaygenShader()
@@ -170,6 +174,22 @@ void CameraClosestHitShader(inout CameraRayPayload payload, in MyAttributes attr
         float3 world_light_dir = world_light_pos-world_pos;
         float light_dist = length(world_light_dir);
         float light_att = clamp(point_light.intensity/light_dist,0.0f,1.0f);
+
+        // Trace Shadow Ray
+        const float shadow_bias = 0.001;
+        ShadowRayPayload shadow_payload = {true};
+        RayDesc shadow_ray;
+        shadow_ray.Origin = world_light_pos;
+        shadow_ray.Direction = -normalize(world_light_dir);
+        shadow_ray.TMin = 0.001;
+        shadow_ray.TMax = light_dist - shadow_bias;
+        TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES
+        | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+        | RAY_FLAG_FORCE_OPAQUE             
+        | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+        ~0,1,0,1,shadow_ray,shadow_payload);
+        if(shadow_payload.hit) light_att = 0.0f;
+
         float3 L = normalize(world_light_dir);
         float3 R = normalize(reflect(-L,N));
         phong += light_att*k_d*max(dot(N,L),0.0f)*albedo_color*point_light.color;
@@ -182,6 +202,12 @@ void CameraClosestHitShader(inout CameraRayPayload payload, in MyAttributes attr
 void CameraMissShader(inout CameraRayPayload payload)
 {
     payload.color = float4(0, 0, 0, 1);
+}
+
+[shader("miss")]
+void ShadowMissShader(inout ShadowRayPayload payload)
+{
+    payload.hit = false;
 }
 
 #endif // RAYTRACING_HLSL
