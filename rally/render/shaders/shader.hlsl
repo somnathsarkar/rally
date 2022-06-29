@@ -84,13 +84,13 @@ ConstantBuffer<HitGroupConstantBuffer> hitgroup_cb : register(b1);
 StructuredBuffer<InstanceBuffer> instance_buffer : register(t4, space0);
 
 typedef BuiltInTriangleIntersectionAttributes MyAttributes;
-struct RayPayload
+struct CameraRayPayload
 {
     float4 color;
 };
 
 [shader("raygeneration")]
-void MyRaygenShader()
+void CameraRaygenShader()
 {
     float2 lerpValues = (float2)DispatchRaysIndex() / (float2)DispatchRaysDimensions();
 
@@ -116,7 +116,7 @@ void MyRaygenShader()
     // TMin should be kept small to prevent missing geometry at close contact areas.
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
-    RayPayload payload = { float4(0, 0, 0, 0) };
+    CameraRayPayload payload = { float4(0, 0, 0, 0) };
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
 
     // Write the raytraced color to the output texture.
@@ -132,7 +132,7 @@ float3 GetWorldPos(){
 }
 
 [shader("closesthit")]
-void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
+void CameraClosestHitShader(inout CameraRayPayload payload, in MyAttributes attr)
 {
     uint instance_id = InstanceID();
     int vertex_offset = instance_buffer[instance_id].vertex_offset;
@@ -179,7 +179,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 }
 
 [shader("miss")]
-void MyMissShader(inout RayPayload payload)
+void CameraMissShader(inout CameraRayPayload payload)
 {
     payload.color = float4(0, 0, 0, 1);
 }

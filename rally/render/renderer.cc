@@ -298,9 +298,9 @@ static bool CreateRaytracingPipeline(Renderer* renderer) {
     D3D12_SHADER_BYTECODE libdxil =
         CD3DX12_SHADER_BYTECODE((void*)g_pRaytracing, sizeof(g_pRaytracing));
     lib->SetDXILLibrary(&libdxil);
-    lib->DefineExport(L"MyRaygenShader");
-    lib->DefineExport(L"MyClosestHitShader");
-    lib->DefineExport(L"MyMissShader");
+    lib->DefineExport(L"CameraRaygenShader");
+    lib->DefineExport(L"CameraClosestHitShader");
+    lib->DefineExport(L"CameraMissShader");
   }
 
   // Hit group: collection of shaders describing types of hits
@@ -308,8 +308,8 @@ static bool CreateRaytracingPipeline(Renderer* renderer) {
   {
     CD3DX12_HIT_GROUP_SUBOBJECT* hit_group =
         pipeline_desc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
-    hit_group->SetClosestHitShaderImport(L"MyClosestHitShader");
-    hit_group->SetHitGroupExport(L"MyHitGroup");
+    hit_group->SetClosestHitShaderImport(L"CameraClosestHitShader");
+    hit_group->SetHitGroupExport(L"CameraHitGroup");
     hit_group->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
   }
 
@@ -331,7 +331,7 @@ static bool CreateRaytracingPipeline(Renderer* renderer) {
     auto local_assoc = pipeline_desc.CreateSubobject<
         CD3DX12_SUBOBJECT_TO_EXPORTS_ASSOCIATION_SUBOBJECT>();
     local_assoc->SetSubobjectToAssociate(*local_root);
-    local_assoc->AddExport(L"MyRaygenShader");
+    local_assoc->AddExport(L"CameraRaygenShader");
   }
 
   // Hitgroup Local Root Signature
@@ -342,7 +342,7 @@ static bool CreateRaytracingPipeline(Renderer* renderer) {
     auto local_assoc = pipeline_desc.CreateSubobject<
         CD3DX12_SUBOBJECT_TO_EXPORTS_ASSOCIATION_SUBOBJECT>();
     local_assoc->SetSubobjectToAssociate(*local_root);
-    local_assoc->AddExport(L"MyHitGroup");
+    local_assoc->AddExport(L"CameraHitGroup");
   }
 
   // Global Root Signature
@@ -702,9 +702,11 @@ static bool CreateShaderTableResources(RendererJobParams* job_params) {
   ID3D12StateObjectProperties* pipeline_props = nullptr;
   renderer->rt_pipeline->QueryInterface(IID_PPV_ARGS(&pipeline_props));
   void* raygen_shader_id =
-      pipeline_props->GetShaderIdentifier(L"MyRaygenShader");
-  void* miss_shader_id = pipeline_props->GetShaderIdentifier(L"MyMissShader");
-  void* hitgroup_shader_id = pipeline_props->GetShaderIdentifier(L"MyHitGroup");
+      pipeline_props->GetShaderIdentifier(L"CameraRaygenShader");
+  void* camera_miss_shader_id =
+      pipeline_props->GetShaderIdentifier(L"CameraMissShader");
+  void* camera_hitgroup_shader_id =
+      pipeline_props->GetShaderIdentifier(L"CameraHitGroup");
   UINT shader_id_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
   pipeline_props->Release();
 
@@ -733,8 +735,9 @@ static bool CreateShaderTableResources(RendererJobParams* job_params) {
   // Miss shader table - single miss shader for all frames
   {
     UINT shader_record_size = shader_id_size;
-    failed |= CreateUploadBuffer(renderer, miss_shader_id, shader_id_size,
-                                 &renderer->rt_miss_shader_table);
+    failed |=
+        CreateUploadBuffer(renderer, camera_miss_shader_id, shader_id_size,
+                           &renderer->rt_miss_shader_table);
   }
 
   // Hit group shader table - one for each frame
@@ -755,7 +758,7 @@ static bool CreateShaderTableResources(RendererJobParams* job_params) {
       void* shader_table_data = nullptr;
       renderer->rt_hitgroup_shader_table[frame_i]->Map(0, nullptr,
                                                        &shader_table_data);
-      memcpy(shader_table_data, hitgroup_shader_id, shader_id_size);
+      memcpy(shader_table_data, camera_hitgroup_shader_id, shader_id_size);
       memcpy((char*)shader_table_data + shader_id_size, &hitgroup_dt_handle,
              sizeof(hitgroup_dt_handle));
       renderer->rt_hitgroup_shader_table[frame_i]->Unmap(0, nullptr);
