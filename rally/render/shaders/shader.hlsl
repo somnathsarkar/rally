@@ -224,10 +224,10 @@ void CameraClosestHitShader(inout CameraRayPayload payload, in MyAttributes attr
         float G2 = 0.5/(G2_denom1+G2_denom2);
 
         // Specular component
-        radiance += light_att*point_light.color*Fhl*G2*Dh;
+        radiance += light_att*point_light.color*Fhl*G2*Dh*mu_i;
         
         // Diffuse component
-        radiance += light_att*(1.0-Fhl)*(1.0-metallic)*(albedo/PI);
+        radiance += light_att*point_light.color*(1.0-Fhl)*(1.0-metallic)*(albedo/PI)*mu_i;
     }
     payload.color = float4(radiance, 1);
 }
