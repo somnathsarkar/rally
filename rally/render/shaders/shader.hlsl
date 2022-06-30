@@ -41,7 +41,10 @@ struct Vertex
 struct Material
 {
     float3 albedo;
-    float shininess;
+    float reflectance;
+    float metallic;
+    float roughness;
+    float _pad[2];
 };
 
 struct PointLight
@@ -158,12 +161,17 @@ void CameraClosestHitShader(inout CameraRayPayload payload, in MyAttributes attr
     // Get world pos
     float3 world_pos = GetWorldPos();
     
-    int mat_id = instance_buffer[instance_id].material_id;
     float3 world_camera_pos = WorldRayOrigin();
-    float3 albedo_color = material_buffer[mat_id].albedo;
     float3 N = normalize(world_normal);
     float3 V = normalize(world_camera_pos-world_pos);
     
+    // PBR material properties
+    int mat_id = instance_buffer[instance_id].material_id;
+    float3 albedo = material_buffer[mat_id].albedo;
+    float reflectance = material_buffer[mat_id].reflectance;
+    float metallic = material_buffer[mat_id].metallic;
+    float roughness = material_buffer[mat_id].roughness;
+
     float3 radiance = float3(0.0,0.0,0.0);
     for(int light_i = 0; light_i<hitgroup_cb.point_light_settings.count; light_i++){
         PointLight point_light = hitgroup_cb.point_lights[light_i];
@@ -197,12 +205,6 @@ void CameraClosestHitShader(inout CameraRayPayload payload, in MyAttributes attr
         // Surface must not be in shadow or out of light range
         if(light_att<=0.0)
             continue;
-
-        // TODO: Move these PBR values into material properties
-        float3 albedo = albedo_color;
-        float reflectance = 0.9;
-        float metallic = 0.0;
-        float roughness = 0.5;
 
         // Fresnel Reflectance
         // Shlick Approximation
