@@ -6,8 +6,8 @@ using namespace rally;
 
 int main() {
   ThreadPoolCreateInfo thread_ci{2};
-  WindowCreateInfo window_ci{L"Cornell Box", 640, 480};
-  RendererCreateInfo renderer_ci{RenderMode::kRaytracing, 640, 480, 3, 2};
+  WindowCreateInfo window_ci{L"Cornell Box", 720, 720};
+  RendererCreateInfo renderer_ci{RenderMode::kRaytracing, 720, 720, 3, 2};
   SceneImportInfo scene_ii{true};
   ScriptCreateInfo script_ci{CreateBoxScript, UpdateBoxScript};
   ApplicationCreateInfo app_ci{&thread_ci, &window_ci, &renderer_ci, &scene_ii,

@@ -12,7 +12,7 @@ bool CreateBoxScript(rally::Application* app) {
   // Setup camera
   rally::Mat4 view_to_world = rally::MTranslation(0.0f, 0.0f, -2.0f);
   rally::Mat4 view_to_projection = rally::MPerspective(
-      rally::Radians(100.0f),
+      rally::Radians(90.0f),
       (rally::r32)app->renderer->width / app->renderer->height, 0.01f, 100.0f);
   rally::Mat4 projection_to_view = rally::MInverse(view_to_projection);
   rally::Mat4 projection_to_world =
