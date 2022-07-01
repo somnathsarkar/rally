@@ -2,6 +2,7 @@
 #define RAYTRACING_HLSL
 
 #define MAX_POINT_LIGHTS 10
+#define PI 3.14159265359
 
 struct Viewport
 {
@@ -40,7 +41,10 @@ struct Vertex
 struct Material
 {
     float3 albedo;
-    float shininess;
+    float reflectance;
+    float metallic;
+    float roughness;
+    float _pad[2];
 };
 
 struct PointLight
@@ -157,23 +161,31 @@ void CameraClosestHitShader(inout CameraRayPayload payload, in MyAttributes attr
     // Get world pos
     float3 world_pos = GetWorldPos();
     
-    int mat_id = instance_buffer[instance_id].material_id;
     float3 world_camera_pos = WorldRayOrigin();
-    float3 albedo_color = material_buffer[mat_id].albedo;
-    float k_a = 0.1f;
-    float k_d = 0.45f;
-    float k_s = 0.45f;
-    float shininess = material_buffer[mat_id].shininess;
     float3 N = normalize(world_normal);
     float3 V = normalize(world_camera_pos-world_pos);
     
-    float3 phong = k_a*albedo_color;
+    // PBR material properties
+    int mat_id = instance_buffer[instance_id].material_id;
+    float3 albedo = material_buffer[mat_id].albedo;
+    float reflectance = material_buffer[mat_id].reflectance;
+    float metallic = material_buffer[mat_id].metallic;
+    float roughness = material_buffer[mat_id].roughness;
+
+    float3 radiance = float3(0.0,0.0,0.0);
     for(int light_i = 0; light_i<hitgroup_cb.point_light_settings.count; light_i++){
         PointLight point_light = hitgroup_cb.point_lights[light_i];
         float3 world_light_pos = point_light.position.xyz;
         float3 world_light_dir = world_light_pos-world_pos;
         float light_dist = length(world_light_dir);
         float light_att = clamp(point_light.intensity/light_dist,0.0f,1.0f);
+        float3 L = normalize(world_light_dir);
+        float3 R = normalize(reflect(-L,N));
+        float3 H = normalize(L+V);
+
+        // Light must be incident on surface
+        if(dot(N,L)<0)
+            continue;
 
         // Trace Shadow Ray
         const float shadow_bias = 0.001;
@@ -190,12 +202,34 @@ void CameraClosestHitShader(inout CameraRayPayload payload, in MyAttributes attr
         ~0,1,0,1,shadow_ray,shadow_payload);
         if(shadow_payload.hit) light_att = 0.0f;
 
-        float3 L = normalize(world_light_dir);
-        float3 R = normalize(reflect(-L,N));
-        phong += light_att*k_d*max(dot(N,L),0.0f)*albedo_color*point_light.color;
-        phong += light_att*k_s*max(pow(dot(R,V),shininess),0.0f)*albedo_color*point_light.color;
+        // Surface must not be in shadow or out of light range
+        if(light_att<=0.0)
+            continue;
+
+        // Fresnel Reflectance
+        // Shlick Approximation
+        float3 F0 = 0.16*reflectance*reflectance*(1.0-metallic)+albedo*metallic;
+        float3 Fhl = F0+(1-F0)*pow(1-max(dot(H,L),0.0),5.0);
+
+        // Normal Distribution Function (NDF)
+        // GGX Distribution
+        float Dh = roughness/(PI*pow(1.0+pow(dot(N,H),2.0)*(roughness-1.0),2.0));
+
+        // Masking Function
+        // Height-correlated Smith G2
+        float mu_i = dot(N,L);
+        float mu_o = dot(N,H);
+        float G2_denom1 = mu_o*sqrt(roughness+mu_i*(mu_i-roughness*mu_i));
+        float G2_denom2 = mu_i*sqrt(roughness+mu_o*(mu_o-roughness*mu_o));
+        float G2 = 0.5/(G2_denom1+G2_denom2);
+
+        // Specular component
+        radiance += light_att*point_light.color*Fhl*G2*Dh*mu_i;
+        
+        // Diffuse component
+        radiance += light_att*point_light.color*(1.0-Fhl)*(1.0-metallic)*(albedo/PI)*mu_i;
     }
-    payload.color = float4(phong, 1);
+    payload.color = float4(radiance, 1);
 }
 
 [shader("miss")]

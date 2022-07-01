@@ -20,7 +20,7 @@ static bool BuildScene(rally::Application* app) {
 
   // Setup point light
   app->scene->light_count = 1;
-  app->scene->lights[0] = {{0, 0, -10.0f, 0}, 1.0f, 0.0f, 1.0f, 10.0f};
+  app->scene->lights[0] = {{0, 0, -10.0f, 0}, 1.0f, 1.0f, 1.0f, 10.0f};
   return false;
 }
 

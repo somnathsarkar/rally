@@ -21,9 +21,12 @@ struct PerspectiveCamera {
 };
 struct Material {
   r32 albedo_r, albedo_g, albedo_b;
-  r32 shininess;
+  r32 reflectance;
+  r32 metallic;
+  r32 roughness;
+  r32 _pad[2];
 };
-struct Instance{
+struct Instance {
   i32 vertex_offset;
   i32 index_offset;
   i32 material_id;
