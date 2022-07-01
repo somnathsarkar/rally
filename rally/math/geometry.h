@@ -24,7 +24,8 @@ struct Material {
   r32 reflectance;
   r32 metallic;
   r32 roughness;
-  r32 _pad[2];
+  r32 reflectivity;
+  r32 _pad;
 };
 struct Instance {
   i32 vertex_offset;

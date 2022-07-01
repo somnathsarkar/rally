@@ -1,6 +1,6 @@
 MODEL ../../common/cube.dae
 MODEL ../../common/sphere.dae
-MATERIAL 1.0 1.0 1.0 0.1 0.0 0.9
-MATERIAL 1.0 0.0 0.0 0.1 0.0 0.9
-MATERIAL 0.0 1.0 0.0 0.1 0.0 0.9
-MATERIAL 0.0 0.0 1.0 1.0 1.0 0.2
+MATERIAL 1.0 1.0 1.0 0.1 0.0 0.9 0.1
+MATERIAL 1.0 0.0 0.0 0.1 0.0 0.9 0.0
+MATERIAL 0.0 1.0 0.0 0.1 0.0 0.9 0.0
+MATERIAL 0.0 0.0 1.0 1.0 1.0 0.2 0.5

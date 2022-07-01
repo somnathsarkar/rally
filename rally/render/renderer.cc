@@ -361,7 +361,7 @@ static bool CreateRaytracingPipeline(Renderer* renderer) {
     auto pipeline_config =
         pipeline_desc
             .CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-    pipeline_config->Config(2);
+    pipeline_config->Config(3);
   }
 
   HRESULT hr = renderer->device->CreateStateObject(

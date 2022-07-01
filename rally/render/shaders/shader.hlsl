@@ -44,7 +44,8 @@ struct Material
     float reflectance;
     float metallic;
     float roughness;
-    float _pad[2];
+    float reflectivity;
+    float _pad;
 };
 
 struct PointLight
@@ -124,7 +125,7 @@ void CameraRaygenShader()
     // TMin should be kept small to prevent missing geometry at close contact areas.
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
-    CameraRayPayload payload = { float4(0, 0, 0, 0) };
+    CameraRayPayload payload = { float4(0, 0, 0, 1) };
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
 
     // Write the raytraced color to the output texture.
@@ -139,9 +140,7 @@ float3 GetWorldPos(){
     return WorldRayOrigin()+WorldRayDirection()*RayTCurrent();
 }
 
-[shader("closesthit")]
-void CameraClosestHitShader(inout CameraRayPayload payload, in BarycentricAttributes attr)
-{
+float3 ComputeRadiance(in BarycentricAttributes attr, in bool recurse){
     uint instance_id = InstanceID();
     int vertex_offset = instance_buffer[instance_id].vertex_offset;
     int index_offset = instance_buffer[instance_id].index_offset;
@@ -171,6 +170,7 @@ void CameraClosestHitShader(inout CameraRayPayload payload, in BarycentricAttrib
     float reflectance = material_buffer[mat_id].reflectance;
     float metallic = material_buffer[mat_id].metallic;
     float roughness = material_buffer[mat_id].roughness;
+    float reflectivity = material_buffer[mat_id].reflectivity;
 
     float3 radiance = float3(0.0,0.0,0.0);
     for(int light_i = 0; light_i<hitgroup_cb.point_light_settings.count; light_i++){
@@ -229,6 +229,25 @@ void CameraClosestHitShader(inout CameraRayPayload payload, in BarycentricAttrib
         // Diffuse component
         radiance += light_att*point_light.color*(1.0-Fhl)*(1.0-metallic)*(albedo/PI)*mu_i;
     }
+    
+    if(recurse){
+        CameraRayPayload reflect_payload = {float4(0,0,0,0)};
+        RayDesc reflect_ray;
+        reflect_ray.Origin = world_pos;
+        reflect_ray.Direction = normalize(reflect(-V,N));
+        reflect_ray.TMin = 0.001;
+        reflect_ray.TMax = 10000.0;
+        TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, reflect_ray, reflect_payload);
+        radiance += reflectivity*reflect_payload.color.rgb;
+    }
+    return radiance;
+}
+
+[shader("closesthit")]
+void CameraClosestHitShader(inout CameraRayPayload payload, in BarycentricAttributes attr)
+{
+    bool recurse = payload.color.w > 0.0;
+    float3 radiance = ComputeRadiance(attr, recurse);
     payload.color = float4(radiance, 1);
 }
 
