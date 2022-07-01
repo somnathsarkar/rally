@@ -87,7 +87,7 @@ StructuredBuffer<Material> material_buffer : register(t3, space0);
 ConstantBuffer<HitGroupConstantBuffer> hitgroup_cb : register(b1);
 StructuredBuffer<InstanceBuffer> instance_buffer : register(t4, space0);
 
-typedef BuiltInTriangleIntersectionAttributes MyAttributes;
+typedef BuiltInTriangleIntersectionAttributes BarycentricAttributes;
 struct CameraRayPayload
 {
     float4 color;
@@ -140,7 +140,7 @@ float3 GetWorldPos(){
 }
 
 [shader("closesthit")]
-void CameraClosestHitShader(inout CameraRayPayload payload, in MyAttributes attr)
+void CameraClosestHitShader(inout CameraRayPayload payload, in BarycentricAttributes attr)
 {
     uint instance_id = InstanceID();
     int vertex_offset = instance_buffer[instance_id].vertex_offset;
