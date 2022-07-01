@@ -44,7 +44,8 @@ struct Material
     float reflectance;
     float metallic;
     float roughness;
-    float _pad[2];
+    float reflectivity;
+    float _pad;
 };
 
 struct PointLight
@@ -169,6 +170,7 @@ float3 ComputeRadiance(in BarycentricAttributes attr, in bool recurse){
     float reflectance = material_buffer[mat_id].reflectance;
     float metallic = material_buffer[mat_id].metallic;
     float roughness = material_buffer[mat_id].roughness;
+    float reflectivity = material_buffer[mat_id].reflectivity;
 
     float3 radiance = float3(0.0,0.0,0.0);
     for(int light_i = 0; light_i<hitgroup_cb.point_light_settings.count; light_i++){
@@ -229,9 +231,6 @@ float3 ComputeRadiance(in BarycentricAttributes attr, in bool recurse){
     }
     
     if(recurse){
-        // TODO: Move reflectivity parameter to material properties
-        float reflectivity = 0.8f;
-
         CameraRayPayload reflect_payload = {float4(0,0,0,0)};
         RayDesc reflect_ray;
         reflect_ray.Origin = world_pos;

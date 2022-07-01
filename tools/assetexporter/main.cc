@@ -83,8 +83,9 @@ void PreprocessMaterial(char* read_buffer, SceneCreateInfo* scene_ci) {
 void ProcessMaterial(char* read_buffer, Scene* scene) {
   u32 mat_i = scene->resources->material_count;
   Material* mat = &scene->resources->materials[mat_i];
-  sscanf(read_buffer + 9, "%f %f %f %f %f %f", &mat->albedo_r, &mat->albedo_g,
-         &mat->albedo_b, &mat->reflectance, &mat->metallic, &mat->roughness);
+  sscanf(read_buffer + 9, "%f %f %f %f %f %f %f", &mat->albedo_r,
+         &mat->albedo_g, &mat->albedo_b, &mat->reflectance, &mat->metallic,
+         &mat->roughness, &mat->reflectivity);
   scene->resources->material_count++;
 }
 
